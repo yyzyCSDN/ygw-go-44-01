@@ -52,13 +52,32 @@ func (c *Consumer) RenewLease(pid int, ttl time.Duration) bool {
 	return true
 }
 
-// Pull fetches messages from a partition segment starting at the committed offset.
+// Pull fetches messages from a partition segment starting at the durable
+// offset. Reading from the durable (rather than merely committed) offset
+// guarantees that after a crash we resume at the last offset whose backing
+// messages were persisted, so any not-yet-durable messages are re-fetched
+// instead of being silently skipped.
 func (c *Consumer) Pull(pid int, seg string) []*model.Message {
-	from := c.offsets.Committed(pid)
+	from := c.offsets.Durable(pid)
 	return c.store.Read(pid, seg, from)
 }
 
-// Commit advances the committed offset for a partition.
+// Commit advances the committed (in-memory intent) offset for a partition.
+//
+// This records only the consumer's intent to advance; it does not mark the
+// offset as durable. A crash between Commit and ConfirmDurable recovers from
+// the previously confirmed durable offset, so any not-yet-persisted messages
+// remain fetchable and will be redelivered. Pair with ConfirmDurable once the
+// backing messages have been persisted.
 func (c *Consumer) Commit(pid int, next int64) {
 	c.offsets.Commit(pid, next)
+}
+
+// ConfirmDurable marks the offset for a partition as durably persisted, i.e.
+// safe to recover from after a crash. It must be called only after the messages
+// backing the offset have been flushed to durable storage, so the durable
+// offset can never run ahead of the data on disk. It is clamped to the
+// committed intent and never moves backwards.
+func (c *Consumer) ConfirmDurable(pid int) {
+	c.offsets.ConfirmDurable(pid, c.offsets.Committed(pid))
 }

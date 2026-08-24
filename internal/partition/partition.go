@@ -13,6 +13,7 @@ type Store struct {
 	parts      map[int]*model.Partition
 	segments   map[int]map[string][]*model.Message
 	segmentIdx map[int]map[string]int64
+	dirty      map[int]bool
 }
 
 // New creates an empty partition store.
@@ -21,6 +22,7 @@ func New() *Store {
 		parts:      make(map[int]*model.Partition),
 		segments:   make(map[int]map[string][]*model.Message),
 		segmentIdx: make(map[int]map[string]int64),
+		dirty:      make(map[int]bool),
 	}
 }
 
@@ -31,6 +33,7 @@ func (s *Store) Add(p *model.Partition) {
 	s.parts[p.ID] = p
 	s.segments[p.ID] = make(map[string][]*model.Message)
 	s.segmentIdx[p.ID] = make(map[string]int64)
+	s.dirty[p.ID] = false
 }
 
 // Get returns a partition by id.
@@ -38,6 +41,20 @@ func (s *Store) Get(id int) *model.Partition {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.parts[id]
+}
+
+// Flush persists all buffered messages of a partition to durable storage and
+// returns the next offset after the last flushed message (the offset that is
+// now safe to recover from). It is a no-op returning the segment end when
+// nothing is buffered.
+func (s *Store) Flush(pid int, seg string) int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// In this in-memory implementation, appends already land in the segment.
+	// Flush exists to mark the durability boundary the offset manager keys off:
+	// callers must Flush before confirming an offset durable.
+	s.dirty[pid] = false
+	return s.segmentIdx[pid][seg]
 }
 
 // Append adds a message to a segment and advances the partition offset.
@@ -49,6 +66,7 @@ func (s *Store) Append(p *model.Partition, seg string, msg *model.Message) int64
 	p.NextOffset++
 	s.segments[p.ID][seg] = append(s.segments[p.ID][seg], msg)
 	s.segmentIdx[p.ID][seg] = p.NextOffset
+	s.dirty[p.ID] = true
 	return msg.Offset
 }
 

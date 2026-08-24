@@ -82,7 +82,9 @@ func main() {
 	_ = bounded
 	metrics.RecordRead()
 	cons.Commit(1, off1+2)
-	om.Durable(1)
+	ps.Flush(1, "seg-1")
+	cons.ConfirmDurable(1)
+	_ = om.Durable(1)
 	for _, m := range got {
 		ackTr.Ack(1, m.ID)
 		redel.Track(1, m)
@@ -191,7 +193,7 @@ func main() {
 	_, _ = rd.Next(1)
 	_ = rd.Cursor()
 
-	ol.Append(model.Checkpoint{Partition: 1, Offset: om.Committed(1)})
+	ol.Append(model.Checkpoint{Partition: 1, Offset: om.Durable(1)})
 	_ = ol.Rows()
 
 	// compaction rewrite + metric report
