@@ -15,9 +15,14 @@ func (c *Coordinator) Snapshot(group string) []MemberState {
 	if g == nil {
 		return nil
 	}
+	cutoff := c.now().Add(-c.heartbeatTimeout)
 	out := make([]MemberState, 0, len(g.Members))
 	for id, m := range g.Members {
-		out = append(out, MemberState{ID: id, Partitions: append([]int(nil), m.Partitions...), Active: true})
+		out = append(out, MemberState{
+			ID:         id,
+			Partitions: append([]int(nil), m.Partitions...),
+			Active:     !m.LastHeartbeat.Before(cutoff),
+		})
 	}
 	return out
 }

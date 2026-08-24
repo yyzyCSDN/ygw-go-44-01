@@ -10,17 +10,25 @@ import (
 	"eventbus/internal/model"
 )
 
+// defaultHeartbeatTimeout is how long a member may go without a heartbeat
+// before Rebalance considers it offline and stops assigning partitions to it.
+const defaultHeartbeatTimeout = 30 * time.Second
+
 // Coordinator manages consumer groups.
 type Coordinator struct {
-	mu          sync.Mutex
-	groups      map[string]*model.Group
-	lastMembers map[string][]string
-	now         func() time.Time
+	mu               sync.Mutex
+	groups           map[string]*model.Group
+	heartbeatTimeout time.Duration
+	now              func() time.Time
 }
 
 // New creates a coordinator.
 func New() *Coordinator {
-	return &Coordinator{groups: make(map[string]*model.Group), lastMembers: make(map[string][]string), now: time.Now}
+	return &Coordinator{
+		groups:           make(map[string]*model.Group),
+		heartbeatTimeout: defaultHeartbeatTimeout,
+		now:              time.Now,
+	}
 }
 
 // Join adds a member to a group and bumps the group version.
